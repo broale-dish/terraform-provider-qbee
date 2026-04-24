@@ -27,7 +27,7 @@ func NewGrouptreeGroupResource() resource.Resource {
 }
 
 type grouptreeGroupResource struct {
-	client *client.Client
+	providerContext *ProviderContext
 }
 
 // Metadata returns the resource type name.
@@ -41,7 +41,7 @@ func (r *grouptreeGroupResource) Configure(_ context.Context, req resource.Confi
 		return
 	}
 
-	r.client = req.ProviderData.(*client.Client)
+	r.providerContext = req.ProviderData.(*ProviderContext)
 }
 
 // Schema defines the schema for the resource.
@@ -108,7 +108,7 @@ func (r *grouptreeGroupResource) Create(ctx context.Context, req resource.Create
 	if nodeID != nodeIDAllDevices {
 		tflog.Info(ctx, fmt.Sprintf("Creating grouptree %v (title=%v), with ancestor %v", nodeID, title, ancestor))
 
-		if err := r.client.GroupTreeUpdate(ctx, client.GroupTreeRequest{
+		if err := r.providerContext.API.GroupTreeUpdate(ctx, client.GroupTreeRequest{
 			Changes: []client.GroupTreeChange{
 				{
 					Action: client.TreeActionCreate,
@@ -129,7 +129,7 @@ func (r *grouptreeGroupResource) Create(ctx context.Context, req resource.Create
 		tflog.Info(ctx, fmt.Sprintf("Skipping creation of grouptree %v (title=%v)", nodeID, title))
 	}
 
-	if err := r.client.GroupTreeSetTags(ctx, nodeID, tags); err != nil {
+	if err := r.providerContext.API.GroupTreeSetTags(ctx, nodeID, tags); err != nil {
 		fmt.Printf("error while settings tags to %+v: %v", tags, err)
 		resp.Diagnostics.AddError("Error creating Grouptree source", "could not set tags on resource: "+err.Error())
 		return
@@ -160,7 +160,7 @@ func (r *grouptreeGroupResource) Read(ctx context.Context, req resource.ReadRequ
 	nodeID := state.ID.ValueString()
 
 	// Read the real status
-	nodeInfo, err := r.client.GroupTreeGetNode(ctx, nodeID)
+	nodeInfo, err := r.providerContext.API.GroupTreeGetNode(ctx, nodeID)
 	if err != nil {
 		resp.Diagnostics.AddError("Error reading Grouptree resource", "could not read grouptree resource: "+err.Error())
 		return
@@ -220,7 +220,7 @@ func (r *grouptreeGroupResource) Update(ctx context.Context, req resource.Update
 	if oldTitle != currentTitle {
 		tflog.Info(ctx, fmt.Sprintf("Renaming grouptree %v from '%v' to '%v'", nodeID, oldTitle, currentTitle))
 
-		err := r.client.GroupTreeUpdate(ctx, client.GroupTreeRequest{
+		err := r.providerContext.API.GroupTreeUpdate(ctx, client.GroupTreeRequest{
 			Changes: []client.GroupTreeChange{
 				{
 					Action: client.TreeActionRename,
@@ -254,7 +254,7 @@ func (r *grouptreeGroupResource) Update(ctx context.Context, req resource.Update
 			}
 		}
 
-		err := r.client.GroupTreeSetTags(ctx, nodeID, tags)
+		err := r.providerContext.API.GroupTreeSetTags(ctx, nodeID, tags)
 		if err != nil {
 			fmt.Printf("error while settings tags to %+v: %v", tags, err)
 			resp.Diagnostics.AddError("Error creating Grouptree source", "could not set tags on resource: "+err.Error())
@@ -281,7 +281,7 @@ func (r *grouptreeGroupResource) Delete(ctx context.Context, req resource.Delete
 
 	tflog.Info(ctx, fmt.Sprintf("Deleting grouptree node %v with parentID %v", nodeID, parentID))
 
-	err := r.client.GroupTreeUpdate(ctx, client.GroupTreeRequest{
+	err := r.providerContext.API.GroupTreeUpdate(ctx, client.GroupTreeRequest{
 		Changes: []client.GroupTreeChange{
 			{
 				Action: client.TreeActionDelete,

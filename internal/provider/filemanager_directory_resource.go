@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -11,7 +13,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"go.qbee.io/client"
-	"path/filepath"
 )
 
 // Ensure the implementation satisfies the expected interfaces.
@@ -26,7 +27,7 @@ func NewFilemanagerDirectoryResource() resource.Resource {
 }
 
 type filemanagerDirectoryResource struct {
-	client *client.Client
+	providerContext *ProviderContext
 }
 
 // Configure adds the provider configured client to the resource.
@@ -35,7 +36,7 @@ func (r *filemanagerDirectoryResource) Configure(_ context.Context, req resource
 		return
 	}
 
-	r.client = req.ProviderData.(*client.Client)
+	r.providerContext = req.ProviderData.(*ProviderContext)
 }
 
 // Metadata returns the resource type name.
@@ -78,7 +79,10 @@ func (r *filemanagerDirectoryResource) Create(ctx context.Context, req resource.
 	pathName := filepath.Base(pathCleaned)
 	tflog.Info(ctx, fmt.Sprintf("Creating filemanager directory %v/%v", pathParent, pathName))
 
-	err := r.client.CreateDirectory(ctx, pathParent, pathName)
+	r.providerContext.FileHelper.Mutex.Lock()
+	err := r.providerContext.API.CreateDirectory(ctx, pathParent, pathName)
+	r.providerContext.FileHelper.Mutex.Unlock()
+
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Error creating filemanager_directory",
@@ -108,7 +112,7 @@ func (r *filemanagerDirectoryResource) Read(ctx context.Context, req resource.Re
 	// Get the refreshed directory value from Qbee
 	directoryPath := state.Path.ValueString()
 
-	metadata, err := r.client.GetFileMetadata(ctx, directoryPath)
+	metadata, err := r.providerContext.API.GetFileMetadata(ctx, directoryPath)
 	if err != nil {
 		if clientErr, ok := err.(client.Error); ok {
 			if errObj, ok := clientErr["error"].(map[string]any); ok {
@@ -161,7 +165,10 @@ func (r *filemanagerDirectoryResource) Delete(ctx context.Context, req resource.
 	directoryPath := state.Path.ValueString()
 	tflog.Info(ctx, fmt.Sprintf("Deleting filemanager directory '%v'", directoryPath))
 
-	err := r.client.DeleteFile(ctx, directoryPath)
+	r.providerContext.FileHelper.Mutex.Lock()
+	err := r.providerContext.API.DeleteFile(ctx, directoryPath)
+	r.providerContext.FileHelper.Mutex.Unlock()
+
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Error deleting filemanager_directory",

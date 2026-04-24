@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"github.com/hashicorp/terraform-plugin-framework-validators/resourcevalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -14,9 +16,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"go.qbee.io/client"
 	"go.qbee.io/client/config"
-	"strings"
 )
 
 // Ensure the implementation satisfies the expected interfaces.
@@ -39,7 +39,7 @@ func NewSoftwareManagementResource() resource.Resource {
 }
 
 type softwaremanagementResource struct {
-	client *client.Client
+	providerContext *ProviderContext
 }
 
 // Metadata returns the resource type name.
@@ -53,7 +53,7 @@ func (r *softwaremanagementResource) Configure(_ context.Context, req resource.C
 		return
 	}
 
-	r.client = req.ProviderData.(*client.Client)
+	r.providerContext = req.ProviderData.(*ProviderContext)
 }
 
 type softwareManagementResourceModel struct {
@@ -282,7 +282,7 @@ func (r *softwaremanagementResource) Read(ctx context.Context, req resource.Read
 	configType, identifier := state.typeAndIdentifier()
 
 	// Read the real status
-	activeConfig, err := r.client.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
+	activeConfig, err := r.providerContext.API.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			errorReadingSoftwaremanagement,
@@ -393,7 +393,7 @@ func (r *softwaremanagementResource) Delete(ctx context.Context, req resource.De
 		return
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			errorDeletingSoftwaremanagement,
@@ -402,14 +402,14 @@ func (r *softwaremanagementResource) Delete(ctx context.Context, req resource.De
 		return
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create softwaremanagement_resource")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create softwaremanagement_resource")
 	if err != nil {
 		resp.Diagnostics.AddError(
 			errorDeletingSoftwaremanagement,
 			"error creating a commit to delete the softwaremanagement resource: "+err.Error(),
 		)
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			resp.Diagnostics.AddError(
 				errorDeletingSoftwaremanagement,
@@ -484,7 +484,7 @@ func (r *softwaremanagementResource) writeSoftwareManagement(ctx context.Context
 		}
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		return diag.Diagnostics{
 			diag.NewErrorDiagnostic(
@@ -494,14 +494,14 @@ func (r *softwaremanagementResource) writeSoftwareManagement(ctx context.Context
 		}
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create softwaremanagement_resource")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create softwaremanagement_resource")
 	if err != nil {
 		diags = diag.Diagnostics{}
 
 		err = fmt.Errorf("error creating a commit for the softwaremanagement: %w", err)
 		diags.AddError(errorWritingSoftwaremanagement, err.Error())
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			diags.AddError(
 				errorWritingSoftwaremanagement,

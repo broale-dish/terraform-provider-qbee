@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"github.com/hashicorp/terraform-plugin-framework-validators/resourcevalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -10,9 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"go.qbee.io/client"
 	"go.qbee.io/client/config"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -39,7 +39,7 @@ func NewRaucResource() resource.Resource {
 }
 
 type raucResource struct {
-	client *client.Client
+	providerContext *ProviderContext
 }
 
 type raucResourceModel struct {
@@ -65,7 +65,7 @@ func (r *raucResource) Configure(_ context.Context, req resource.ConfigureReques
 		return
 	}
 
-	r.client = req.ProviderData.(*client.Client)
+	r.providerContext = req.ProviderData.(*ProviderContext)
 }
 
 // Schema defines the schema for the resource.
@@ -172,7 +172,7 @@ func (r *raucResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 	configType, identifier := state.typeAndIdentifier()
 
 	// Read the real status
-	activeConfig, err := r.client.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
+	activeConfig, err := r.providerContext.API.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
 	if err != nil {
 		resp.Diagnostics.AddError(errorReadingRauc,
 			"error reading the active configuration: "+err.Error())
@@ -230,7 +230,7 @@ func (r *raucResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 		return
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			errorDeletingRauc,
@@ -239,13 +239,13 @@ func (r *raucResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 		return
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create rauc")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create rauc")
 	if err != nil {
 		resp.Diagnostics.AddError(errorDeletingRauc,
 			"error creating a commit to delete the rauc resource: "+err.Error(),
 		)
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			resp.Diagnostics.AddError(
 				errorDeletingRauc,
@@ -312,7 +312,7 @@ func (r *raucResource) writeRauc(ctx context.Context, plan raucResourceModel) di
 		}
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		return diag.Diagnostics{
 			diag.NewErrorDiagnostic(
@@ -322,14 +322,14 @@ func (r *raucResource) writeRauc(ctx context.Context, plan raucResourceModel) di
 		}
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create rauc")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create rauc")
 	if err != nil {
 		diags := diag.Diagnostics{}
 
 		err = fmt.Errorf("error creating a commit for the rauc: %w", err)
 		diags.AddError(errorWritingRauc, err.Error())
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			diags.AddError(
 				errorWritingRauc,

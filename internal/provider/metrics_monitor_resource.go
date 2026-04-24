@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"github.com/hashicorp/terraform-plugin-framework-validators/resourcevalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -10,9 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"go.qbee.io/client"
 	"go.qbee.io/client/config"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -39,7 +39,7 @@ func NewMetricsMonitorResource() resource.Resource {
 }
 
 type metricsMonitorResource struct {
-	client *client.Client
+	providerContext *ProviderContext
 }
 
 type metricsMonitorResourceModel struct {
@@ -70,7 +70,7 @@ func (r *metricsMonitorResource) Configure(_ context.Context, req resource.Confi
 		return
 	}
 
-	r.client = req.ProviderData.(*client.Client)
+	r.providerContext = req.ProviderData.(*ProviderContext)
 }
 
 // Schema defines the schema for the resource.
@@ -189,7 +189,7 @@ func (r *metricsMonitorResource) Read(ctx context.Context, req resource.ReadRequ
 	configType, identifier := state.typeAndIdentifier()
 
 	// Read the real status
-	activeConfig, err := r.client.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
+	activeConfig, err := r.providerContext.API.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
 	if err != nil {
 		resp.Diagnostics.AddError(errorReadingMetricsMonitor,
 			"error reading the active configuration: "+err.Error())
@@ -256,7 +256,7 @@ func (r *metricsMonitorResource) Delete(ctx context.Context, req resource.Delete
 		return
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			errorDeletingMetricsMonitor,
@@ -265,13 +265,13 @@ func (r *metricsMonitorResource) Delete(ctx context.Context, req resource.Delete
 		return
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create metrics_monitor")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create metrics_monitor")
 	if err != nil {
 		resp.Diagnostics.AddError(errorDeletingMetricsMonitor,
 			"error creating a commit to delete the metrics_monitor resource: "+err.Error(),
 		)
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			resp.Diagnostics.AddError(
 				errorDeletingMetricsMonitor,
@@ -343,7 +343,7 @@ func (r *metricsMonitorResource) writeMetricsMonitor(ctx context.Context, plan m
 		}
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		return diag.Diagnostics{
 			diag.NewErrorDiagnostic(
@@ -353,14 +353,14 @@ func (r *metricsMonitorResource) writeMetricsMonitor(ctx context.Context, plan m
 		}
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create metrics_monitor")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create metrics_monitor")
 	if err != nil {
 		diags := diag.Diagnostics{}
 
 		err = fmt.Errorf("error creating a commit for the metrics_monitor: %w", err)
 		diags.AddError(errorWritingMetricsMonitor, err.Error())
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			diags.AddError(
 				errorWritingMetricsMonitor,

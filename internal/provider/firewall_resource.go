@@ -16,7 +16,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"go.qbee.io/client"
 	"go.qbee.io/client/config"
 )
 
@@ -40,7 +39,7 @@ func NewFirewallResource() resource.Resource {
 }
 
 type firewallResource struct {
-	client *client.Client
+	providerContext *ProviderContext
 }
 
 // Metadata returns the resource type name.
@@ -54,7 +53,7 @@ func (r *firewallResource) Configure(_ context.Context, req resource.ConfigureRe
 		return
 	}
 
-	r.client = req.ProviderData.(*client.Client)
+	r.providerContext = req.ProviderData.(*ProviderContext)
 }
 
 // Schema defines the schema for the resource.
@@ -209,7 +208,7 @@ func (r *firewallResource) Read(ctx context.Context, req resource.ReadRequest, r
 	configType, identifier := state.typeAndIdentifier()
 
 	// Read the real status
-	activeConfig, err := r.client.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
+	activeConfig, err := r.providerContext.API.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			errorReadingFirewall,
@@ -306,7 +305,7 @@ func (r *firewallResource) Delete(ctx context.Context, req resource.DeleteReques
 		return
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			errorDeletingFirewall,
@@ -314,14 +313,14 @@ func (r *firewallResource) Delete(ctx context.Context, req resource.DeleteReques
 		return
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create firewall_resource")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create firewall_resource")
 	if err != nil {
 		resp.Diagnostics.AddError(
 			errorDeletingFirewall,
 			"error creating a commit to delete the firewall resource: "+err.Error(),
 		)
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			resp.Diagnostics.AddError(
 				errorDeletingFirewall,
@@ -390,7 +389,7 @@ func (r *firewallResource) writeFirewall(ctx context.Context, plan firewallResou
 		}
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		return diag.Diagnostics{
 			diag.NewErrorDiagnostic(
@@ -400,14 +399,14 @@ func (r *firewallResource) writeFirewall(ctx context.Context, plan firewallResou
 		}
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create firewall_resource")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create firewall_resource")
 	if err != nil {
 		diags := diag.Diagnostics{}
 
 		err = fmt.Errorf("error creating a commit for the firewall: %w", err)
 		diags.AddError(errorWritingFirewall, err.Error())
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			diags.AddError(
 				errorWritingFirewall,

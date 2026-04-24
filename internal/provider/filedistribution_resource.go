@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"github.com/hashicorp/terraform-plugin-framework-validators/resourcevalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -12,9 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"go.qbee.io/client"
 	"go.qbee.io/client/config"
-	"strings"
 )
 
 // Ensure the implementation satisfies the expected interfaces.
@@ -37,7 +37,7 @@ func NewFiledistributionResource() resource.Resource {
 }
 
 type filedistributionResource struct {
-	client *client.Client
+	providerContext *ProviderContext
 }
 
 // Metadata returns the resource type name.
@@ -51,7 +51,7 @@ func (r *filedistributionResource) Configure(_ context.Context, req resource.Con
 		return
 	}
 
-	r.client = req.ProviderData.(*client.Client)
+	r.providerContext = req.ProviderData.(*ProviderContext)
 }
 
 // Schema defines the schema for the resource.
@@ -286,7 +286,7 @@ func (r *filedistributionResource) writeFiledistribution(ctx context.Context, pl
 		}
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		return diag.Diagnostics{
 			diag.NewErrorDiagnostic(
@@ -296,14 +296,14 @@ func (r *filedistributionResource) writeFiledistribution(ctx context.Context, pl
 		}
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create filedistribution_resource")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create filedistribution_resource")
 	if err != nil {
 		diags := diag.Diagnostics{}
 
 		err = fmt.Errorf("error creating a commit for the filedistribution: %w", err)
 		diags.AddError(errorWritingFiledistribution, err.Error())
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			diags.AddError(
 				errorWritingFiledistribution,
@@ -330,7 +330,7 @@ func (r *filedistributionResource) Read(ctx context.Context, req resource.ReadRe
 	configType, identifier := state.typeAndIdentifier()
 
 	// Read the real status
-	activeConfig, err := r.client.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
+	activeConfig, err := r.providerContext.API.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
 	if err != nil {
 		resp.Diagnostics.AddError(errorReadingFiledistribution,
 			"error reading the active configuration: "+err.Error())
@@ -434,7 +434,7 @@ func (r *filedistributionResource) Delete(ctx context.Context, req resource.Dele
 		return
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			errorDeletingFiledistribution,
@@ -443,13 +443,13 @@ func (r *filedistributionResource) Delete(ctx context.Context, req resource.Dele
 		return
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create filedistribution_resource")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create filedistribution_resource")
 	if err != nil {
 		resp.Diagnostics.AddError(errorDeletingFiledistribution,
 			"error creating a commit to delete the filedistribution resource: "+err.Error(),
 		)
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			resp.Diagnostics.AddError(
 				errorDeletingFiledistribution,

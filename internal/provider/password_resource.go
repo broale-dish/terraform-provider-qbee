@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"github.com/hashicorp/terraform-plugin-framework-validators/resourcevalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -10,9 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"go.qbee.io/client"
 	"go.qbee.io/client/config"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -39,7 +39,7 @@ func NewPasswordResource() resource.Resource {
 }
 
 type passwordResource struct {
-	client *client.Client
+	providerContext *ProviderContext
 }
 
 type passwordResourceModel struct {
@@ -69,7 +69,7 @@ func (r *passwordResource) Configure(_ context.Context, req resource.ConfigureRe
 		return
 	}
 
-	r.client = req.ProviderData.(*client.Client)
+	r.providerContext = req.ProviderData.(*ProviderContext)
 }
 
 // Schema defines the schema for the resource.
@@ -184,7 +184,7 @@ func (r *passwordResource) Read(ctx context.Context, req resource.ReadRequest, r
 	configType, identifier := state.typeAndIdentifier()
 
 	// Read the real status
-	activeConfig, err := r.client.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
+	activeConfig, err := r.providerContext.API.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
 	if err != nil {
 		resp.Diagnostics.AddError(errorReadingPassword,
 			"error reading the active configuration: "+err.Error())
@@ -247,7 +247,7 @@ func (r *passwordResource) Delete(ctx context.Context, req resource.DeleteReques
 		return
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			errorDeletingPassword,
@@ -256,13 +256,13 @@ func (r *passwordResource) Delete(ctx context.Context, req resource.DeleteReques
 		return
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create password")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create password")
 	if err != nil {
 		resp.Diagnostics.AddError(errorDeletingPassword,
 			"error creating a commit to delete the password resource: "+err.Error(),
 		)
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			resp.Diagnostics.AddError(
 				errorDeletingPassword,
@@ -333,7 +333,7 @@ func (r *passwordResource) writePassword(ctx context.Context, plan passwordResou
 		}
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		return diag.Diagnostics{
 			diag.NewErrorDiagnostic(
@@ -343,14 +343,14 @@ func (r *passwordResource) writePassword(ctx context.Context, plan passwordResou
 		}
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create password")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create password")
 	if err != nil {
 		diags := diag.Diagnostics{}
 
 		err = fmt.Errorf("error creating a commit for the password: %w", err)
 		diags.AddError(errorWritingPassword, err.Error())
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			diags.AddError(
 				errorWritingPassword,

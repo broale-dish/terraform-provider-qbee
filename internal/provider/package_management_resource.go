@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"github.com/hashicorp/terraform-plugin-framework-validators/resourcevalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -13,9 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"go.qbee.io/client"
 	"go.qbee.io/client/config"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -42,7 +42,7 @@ func NewPackageManagementResource() resource.Resource {
 }
 
 type packageManagementResource struct {
-	client *client.Client
+	providerContext *ProviderContext
 }
 
 type packageManagementResourceModel struct {
@@ -75,7 +75,7 @@ func (r *packageManagementResource) Configure(_ context.Context, req resource.Co
 		return
 	}
 
-	r.client = req.ProviderData.(*client.Client)
+	r.providerContext = req.ProviderData.(*ProviderContext)
 }
 
 // Schema defines the schema for the resource.
@@ -211,7 +211,7 @@ func (r *packageManagementResource) Read(ctx context.Context, req resource.ReadR
 	configType, identifier := state.typeAndIdentifier()
 
 	// Read the real status
-	activeConfig, err := r.client.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
+	activeConfig, err := r.providerContext.API.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
 	if err != nil {
 		resp.Diagnostics.AddError(errorReadingPackageManagement,
 			"error reading the active configuration: "+err.Error())
@@ -284,7 +284,7 @@ func (r *packageManagementResource) Delete(ctx context.Context, req resource.Del
 		return
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			errorDeletingPackageManagement,
@@ -293,13 +293,13 @@ func (r *packageManagementResource) Delete(ctx context.Context, req resource.Del
 		return
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create package_management")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create package_management")
 	if err != nil {
 		resp.Diagnostics.AddError(errorDeletingPackageManagement,
 			"error creating a commit to delete the package_management resource: "+err.Error(),
 		)
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			resp.Diagnostics.AddError(
 				errorDeletingPackageManagement,
@@ -377,7 +377,7 @@ func (r *packageManagementResource) writePackageManagement(ctx context.Context, 
 		}
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		return diag.Diagnostics{
 			diag.NewErrorDiagnostic(
@@ -387,14 +387,14 @@ func (r *packageManagementResource) writePackageManagement(ctx context.Context, 
 		}
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create package_management")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create package_management")
 	if err != nil {
 		diags := diag.Diagnostics{}
 
 		err = fmt.Errorf("error creating a commit for the package_management: %w", err)
 		diags.AddError(errorWritingPackageManagement, err.Error())
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			diags.AddError(
 				errorWritingPackageManagement,

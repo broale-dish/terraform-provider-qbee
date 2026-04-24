@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"github.com/hashicorp/terraform-plugin-framework-validators/resourcevalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -14,9 +16,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"go.qbee.io/client"
 	"go.qbee.io/client/config"
-	"strings"
 )
 
 // Ensure the implementation satisfies the expected interfaces.
@@ -40,7 +40,7 @@ func NewUsersResource() resource.Resource {
 }
 
 type usersResource struct {
-	client *client.Client
+	providerContext *ProviderContext
 }
 
 type usersResourceModel struct {
@@ -70,7 +70,7 @@ func (r *usersResource) Configure(_ context.Context, req resource.ConfigureReque
 		return
 	}
 
-	r.client = req.ProviderData.(*client.Client)
+	r.providerContext = req.ProviderData.(*ProviderContext)
 }
 
 // Schema defines the schema for the resource.
@@ -188,7 +188,7 @@ func (r *usersResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	configType, identifier := state.typeAndIdentifier()
 
 	// Read the real status
-	activeConfig, err := r.client.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
+	activeConfig, err := r.providerContext.API.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
 	if err != nil {
 		resp.Diagnostics.AddError(errorReadingUsers,
 			"error reading the active configuration: "+err.Error())
@@ -251,7 +251,7 @@ func (r *usersResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 		return
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			errorDeletingUsers,
@@ -260,13 +260,13 @@ func (r *usersResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 		return
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create users")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create users")
 	if err != nil {
 		resp.Diagnostics.AddError(errorDeletingUsers,
 			"error creating a commit to delete the users resource: "+err.Error(),
 		)
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			resp.Diagnostics.AddError(
 				errorDeletingUsers,
@@ -337,7 +337,7 @@ func (r *usersResource) writeUsers(ctx context.Context, plan usersResourceModel)
 		}
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		return diag.Diagnostics{
 			diag.NewErrorDiagnostic(
@@ -347,14 +347,14 @@ func (r *usersResource) writeUsers(ctx context.Context, plan usersResourceModel)
 		}
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create users")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create users")
 	if err != nil {
 		diags := diag.Diagnostics{}
 
 		err = fmt.Errorf("error creating a commit for the users: %w", err)
 		diags.AddError(errorWritingUsers, err.Error())
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			diags.AddError(
 				errorWritingUsers,

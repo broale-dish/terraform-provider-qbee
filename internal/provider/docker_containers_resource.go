@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"github.com/hashicorp/terraform-plugin-framework-validators/resourcevalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -11,9 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"go.qbee.io/client"
 	"go.qbee.io/client/config"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -40,7 +40,7 @@ func NewDockerContainersResource() resource.Resource {
 }
 
 type dockerContainersResource struct {
-	client *client.Client
+	providerContext *ProviderContext
 }
 
 type dockerContainersResourceModel struct {
@@ -71,7 +71,7 @@ func (r *dockerContainersResource) Configure(_ context.Context, req resource.Con
 		return
 	}
 
-	r.client = req.ProviderData.(*client.Client)
+	r.providerContext = req.ProviderData.(*ProviderContext)
 }
 
 // Schema defines the schema for the resource.
@@ -230,7 +230,7 @@ func (r *dockerContainersResource) Read(ctx context.Context, req resource.ReadRe
 	configType, identifier := state.typeAndIdentifier()
 
 	// Read the real status
-	activeConfig, err := r.client.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
+	activeConfig, err := r.providerContext.API.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
 	if err != nil {
 		resp.Diagnostics.AddError(errorReadingDockerContainers,
 			"error reading the active configuration: "+err.Error())
@@ -313,7 +313,7 @@ func (r *dockerContainersResource) Delete(ctx context.Context, req resource.Dele
 		return
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			errorDeletingDockerContainers,
@@ -322,13 +322,13 @@ func (r *dockerContainersResource) Delete(ctx context.Context, req resource.Dele
 		return
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create dockerContainers_resource")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create dockerContainers_resource")
 	if err != nil {
 		resp.Diagnostics.AddError(errorDeletingDockerContainers,
 			"error creating a commit to delete the docker_containers resource: "+err.Error(),
 		)
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			resp.Diagnostics.AddError(
 				errorDeletingDockerContainers,
@@ -413,7 +413,7 @@ func (r *dockerContainersResource) writeDockerContainers(ctx context.Context, pl
 		}
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		return diag.Diagnostics{
 			diag.NewErrorDiagnostic(
@@ -423,14 +423,14 @@ func (r *dockerContainersResource) writeDockerContainers(ctx context.Context, pl
 		}
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create dockerContainers_resource")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create dockerContainers_resource")
 	if err != nil {
 		diags := diag.Diagnostics{}
 
 		err = fmt.Errorf("error creating a commit for the docker_containers: %w", err)
 		diags.AddError(errorWritingDockerContainers, err.Error())
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			diags.AddError(
 				errorWritingDockerContainers,

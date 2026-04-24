@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"github.com/hashicorp/terraform-plugin-framework-validators/resourcevalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -12,9 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"go.qbee.io/client"
 	"go.qbee.io/client/config"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -41,7 +41,7 @@ func NewProcessWatchResource() resource.Resource {
 }
 
 type ProcessWatchResource struct {
-	client *client.Client
+	providerContext *ProviderContext
 }
 
 type ProcessWatchResourceModel struct {
@@ -72,7 +72,7 @@ func (r *ProcessWatchResource) Configure(_ context.Context, req resource.Configu
 		return
 	}
 
-	r.client = req.ProviderData.(*client.Client)
+	r.providerContext = req.ProviderData.(*ProviderContext)
 }
 
 // Schema defines the schema for the resource.
@@ -196,7 +196,7 @@ func (r *ProcessWatchResource) Read(ctx context.Context, req resource.ReadReques
 	configType, identifier := state.typeAndIdentifier()
 
 	// Read the real status
-	activeConfig, err := r.client.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
+	activeConfig, err := r.providerContext.API.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
 	if err != nil {
 		resp.Diagnostics.AddError(errorReadingProcessWatch,
 			"error reading the active configuration: "+err.Error())
@@ -260,7 +260,7 @@ func (r *ProcessWatchResource) Delete(ctx context.Context, req resource.DeleteRe
 		return
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			errorDeletingProcessWatch,
@@ -269,13 +269,13 @@ func (r *ProcessWatchResource) Delete(ctx context.Context, req resource.DeleteRe
 		return
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create process_watch")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create process_watch")
 	if err != nil {
 		resp.Diagnostics.AddError(errorDeletingProcessWatch,
 			"error creating a commit to delete the process_watch resource: "+err.Error(),
 		)
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			resp.Diagnostics.AddError(
 				errorDeletingProcessWatch,
@@ -347,7 +347,7 @@ func (r *ProcessWatchResource) writeProcessWatch(ctx context.Context, plan Proce
 		}
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		return diag.Diagnostics{
 			diag.NewErrorDiagnostic(
@@ -357,14 +357,14 @@ func (r *ProcessWatchResource) writeProcessWatch(ctx context.Context, plan Proce
 		}
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create process_watch")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create process_watch")
 	if err != nil {
 		diags := diag.Diagnostics{}
 
 		err = fmt.Errorf("error creating a commit for the process_watch: %w", err)
 		diags.AddError(errorWritingProcessWatch, err.Error())
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			diags.AddError(
 				errorWritingProcessWatch,

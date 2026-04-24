@@ -4,6 +4,9 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -12,8 +15,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"go.qbee.io/client"
-	"os"
-	"path/filepath"
 )
 
 // Ensure the implementation satisfies the expected interfaces.
@@ -34,7 +35,7 @@ func NewFilemanagerFileResource() resource.Resource {
 }
 
 type filemanagerFileResource struct {
-	client *client.Client
+	providerContext *ProviderContext
 }
 
 // Metadata returns the resource type name.
@@ -48,7 +49,7 @@ func (r *filemanagerFileResource) Configure(_ context.Context, req resource.Conf
 		return
 	}
 
-	r.client = req.ProviderData.(*client.Client)
+	r.providerContext = req.ProviderData.(*ProviderContext)
 }
 
 // Schema defines the schema for the resource.
@@ -110,7 +111,11 @@ func (r *filemanagerFileResource) Create(ctx context.Context, req resource.Creat
 	}
 
 	fileReader := bufio.NewReader(f)
-	err = r.client.UploadFile(ctx, fileDirectory, fileName, fileReader)
+
+	r.providerContext.FileHelper.Mutex.Lock()
+	err = r.providerContext.API.UploadFile(ctx, fileDirectory, fileName, fileReader)
+	r.providerContext.FileHelper.Mutex.Unlock()
+
 	if err != nil {
 		resp.Diagnostics.AddError(
 			errorCreatingFilemanagerFile,
@@ -141,7 +146,7 @@ func (r *filemanagerFileResource) Read(ctx context.Context, req resource.ReadReq
 	filePath := state.Path.ValueString()
 
 	// Get the current file from Qbee
-	metadata, err := r.client.GetFileMetadata(ctx, filePath)
+	metadata, err := r.providerContext.API.GetFileMetadata(ctx, filePath)
 	if err != nil {
 		if clientErr, ok := err.(client.Error); ok {
 			if errObj, ok := clientErr["error"].(map[string]any); ok {
@@ -189,7 +194,11 @@ func (r *filemanagerFileResource) Delete(ctx context.Context, req resource.Delet
 	// Delete file
 	filePath := state.Path.ValueString()
 	tflog.Info(ctx, fmt.Sprintf("Deleting filemanager path '%v'", filePath))
-	err := r.client.DeleteFile(ctx, filePath)
+
+	r.providerContext.FileHelper.Mutex.Lock()
+	err := r.providerContext.API.DeleteFile(ctx, filePath)
+	r.providerContext.FileHelper.Mutex.Unlock()
+
 	if err != nil {
 		resp.Diagnostics.AddError(
 			errorDeletingFilemanagerFile,

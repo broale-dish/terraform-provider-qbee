@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -31,7 +32,7 @@ func NewBootstrapKeyResource() resource.Resource {
 }
 
 type bootstrapKeyResource struct {
-	client *client.Client
+	providerContext *ProviderContext
 }
 
 type bootstrapKeyResourceModel struct {
@@ -51,7 +52,7 @@ func (r *bootstrapKeyResource) Configure(_ context.Context, req resource.Configu
 		return
 	}
 
-	r.client = req.ProviderData.(*client.Client)
+	r.providerContext = req.ProviderData.(*ProviderContext)
 }
 
 // Schema defines the schema for the resource.
@@ -88,7 +89,7 @@ func (r *bootstrapKeyResource) Create(ctx context.Context, req resource.CreateRe
 
 	tflog.Info(ctx, fmt.Sprintf("Creating bootstrap key associated with group ID: %s", plan.GroupId.ValueString()))
 
-	bootstrapKey, err := r.client.NewBootstrapKey(ctx)
+	bootstrapKey, err := r.providerContext.API.NewBootstrapKey(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError(errorWritingBootstrapKey,
 			"error writing the bootstrapKey configuration: "+err.Error())
@@ -101,14 +102,14 @@ func (r *bootstrapKeyResource) Create(ctx context.Context, req resource.CreateRe
 		GroupID:    plan.GroupId.ValueString(),
 		AutoAccept: plan.AutoAccept.ValueBool(),
 	}
-	err = r.client.UpdateBoostrapKey(ctx, &payload)
+	err = r.providerContext.API.UpdateBoostrapKey(ctx, &payload)
 	if err != nil {
 		resp.Diagnostics.AddError(errorWritingBootstrapKey,
 			"error writing the bootstrapKey: "+err.Error())
 		return
 	}
 
-	bootstrapKey, err = r.client.GetBootstrapKey(ctx, bootstrapKey.ID)
+	bootstrapKey, err = r.providerContext.API.GetBootstrapKey(ctx, bootstrapKey.ID)
 	if err != nil {
 		resp.Diagnostics.AddError(errorReadingBootstrapKey,
 			"error reading the bootstrapKey: "+err.Error())
@@ -150,7 +151,7 @@ func (r *bootstrapKeyResource) Update(ctx context.Context, req resource.UpdateRe
 		AutoAccept: plan.AutoAccept.ValueBool(),
 	}
 
-	err := r.client.UpdateBoostrapKey(ctx, &payload)
+	err := r.providerContext.API.UpdateBoostrapKey(ctx, &payload)
 	if err != nil {
 		resp.Diagnostics.AddError(errorWritingBootstrapKey,
 			"error writing the bootstrap key: "+err.Error())
@@ -182,7 +183,7 @@ func (r *bootstrapKeyResource) Read(ctx context.Context, req resource.ReadReques
 	}
 
 	// Read the real status
-	bootstrapKey, err := r.client.GetBootstrapKey(ctx, state.Id.ValueString())
+	bootstrapKey, err := r.providerContext.API.GetBootstrapKey(ctx, state.Id.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError(errorReadingBootstrapKey,
 			"error reading the bootstrap_key: "+err.Error())
@@ -220,7 +221,7 @@ func (r *bootstrapKeyResource) Delete(ctx context.Context, req resource.DeleteRe
 	// Delete the resource
 	tflog.Info(ctx, fmt.Sprintf("Deleting bootstrap key associated with group ID: %s", state.GroupId.ValueString()))
 
-	err := r.client.DeleteBootstrapKey(ctx, state.Id.ValueString())
+	err := r.providerContext.API.DeleteBootstrapKey(ctx, state.Id.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError(errorDeletingBootstrapKey,
 			"error deleting the bootstrap key: "+err.Error())

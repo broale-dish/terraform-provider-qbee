@@ -2,6 +2,9 @@ package provider
 
 import (
 	"context"
+	"os"
+	"sync"
+
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
@@ -9,7 +12,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"go.qbee.io/client"
-	"os"
 )
 
 // Ensure QbeeProvider satisfies various provider interfaces.
@@ -21,6 +23,15 @@ type QbeeProvider struct {
 	// provider is built and ran locally, and "test" when running acceptance
 	// testing.
 	version string
+}
+
+type ProviderContext struct {
+	API        client.Client
+	FileHelper *FileHelper
+}
+
+type FileHelper struct {
+	Mutex *sync.Mutex
 }
 
 // qbeeProviderModel describes the provider data model.
@@ -118,13 +129,13 @@ func (p *QbeeProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		return
 	}
 
-	qbeeClient := client.New()
+	apiClient := client.New()
 
 	if baseUrl != "" {
-		qbeeClient = qbeeClient.WithBaseURL(baseUrl)
+		apiClient = apiClient.WithBaseURL(baseUrl)
 	}
 
-	err := qbeeClient.Authenticate(ctx, username, password)
+	err := apiClient.Authenticate(ctx, username, password)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to create Qbee API Client",
@@ -132,8 +143,15 @@ func (p *QbeeProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		return
 	}
 
-	resp.DataSourceData = qbeeClient
-	resp.ResourceData = qbeeClient
+	providerContext := &ProviderContext{
+		API: *apiClient,
+		FileHelper: &FileHelper{
+			Mutex: &sync.Mutex{},
+		},
+	}
+
+	resp.DataSourceData = providerContext
+	resp.ResourceData = providerContext
 }
 
 func (p *QbeeProvider) Resources(ctx context.Context) []func() resource.Resource {

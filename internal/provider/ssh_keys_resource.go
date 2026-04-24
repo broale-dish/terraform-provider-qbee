@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"github.com/hashicorp/terraform-plugin-framework-validators/resourcevalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -10,9 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"go.qbee.io/client"
 	"go.qbee.io/client/config"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -39,7 +39,7 @@ func NewSSHKeysResource() resource.Resource {
 }
 
 type sshKeysResource struct {
-	client *client.Client
+	providerContext *ProviderContext
 }
 
 type sshKeysResourceModel struct {
@@ -69,7 +69,7 @@ func (r *sshKeysResource) Configure(_ context.Context, req resource.ConfigureReq
 		return
 	}
 
-	r.client = req.ProviderData.(*client.Client)
+	r.providerContext = req.ProviderData.(*ProviderContext)
 }
 
 // Schema defines the schema for the resource.
@@ -185,7 +185,7 @@ func (r *sshKeysResource) Read(ctx context.Context, req resource.ReadRequest, re
 	configType, identifier := state.typeAndIdentifier()
 
 	// Read the real status
-	activeConfig, err := r.client.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
+	activeConfig, err := r.providerContext.API.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
 	if err != nil {
 		resp.Diagnostics.AddError(errorReadingSSHKeys,
 			"error reading the active configuration: "+err.Error())
@@ -253,7 +253,7 @@ func (r *sshKeysResource) Delete(ctx context.Context, req resource.DeleteRequest
 		return
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			errorDeletingSSHKeys,
@@ -262,13 +262,13 @@ func (r *sshKeysResource) Delete(ctx context.Context, req resource.DeleteRequest
 		return
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create ssh_keys")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create ssh_keys")
 	if err != nil {
 		resp.Diagnostics.AddError(errorDeletingSSHKeys,
 			"error creating a commit to delete the ssh_keys resource: "+err.Error(),
 		)
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			resp.Diagnostics.AddError(
 				errorDeletingSSHKeys,
@@ -344,7 +344,7 @@ func (r *sshKeysResource) writeSSHKeys(ctx context.Context, plan sshKeysResource
 		}
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		return diag.Diagnostics{
 			diag.NewErrorDiagnostic(
@@ -354,14 +354,14 @@ func (r *sshKeysResource) writeSSHKeys(ctx context.Context, plan sshKeysResource
 		}
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create ssh_keys")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create ssh_keys")
 	if err != nil {
 		diags := diag.Diagnostics{}
 
 		err = fmt.Errorf("error creating a commit for the ssh_keys: %w", err)
 		diags.AddError(errorWritingSSHKeys, err.Error())
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			diags.AddError(
 				errorWritingSSHKeys,

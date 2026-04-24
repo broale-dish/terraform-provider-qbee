@@ -3,6 +3,9 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
+
 	"github.com/hashicorp/terraform-plugin-framework-validators/resourcevalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -10,10 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"go.qbee.io/client"
 	"go.qbee.io/client/config"
-	"strconv"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -40,7 +40,7 @@ func NewConnectivityWatchdogResource() resource.Resource {
 }
 
 type connectivityWatchdogResource struct {
-	client *client.Client
+	providerContext *ProviderContext
 }
 
 type connectivityWatchdogResourceModel struct {
@@ -65,7 +65,7 @@ func (r *connectivityWatchdogResource) Configure(_ context.Context, req resource
 		return
 	}
 
-	r.client = req.ProviderData.(*client.Client)
+	r.providerContext = req.ProviderData.(*ProviderContext)
 }
 
 // Schema defines the schema for the resource.
@@ -168,7 +168,7 @@ func (r *connectivityWatchdogResource) Read(ctx context.Context, req resource.Re
 	configType, identifier := state.typeAndIdentifier()
 
 	// Read the real status
-	activeConfig, err := r.client.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
+	activeConfig, err := r.providerContext.API.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
 	if err != nil {
 		resp.Diagnostics.AddError(errorReadingConnectivityWatchdog,
 			"error reading the active configuration: "+err.Error())
@@ -233,7 +233,7 @@ func (r *connectivityWatchdogResource) Delete(ctx context.Context, req resource.
 		return
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			errorDeletingConnectivityWatchdog,
@@ -242,13 +242,13 @@ func (r *connectivityWatchdogResource) Delete(ctx context.Context, req resource.
 		return
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create connectivityWatchdog_resource")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create connectivityWatchdog_resource")
 	if err != nil {
 		resp.Diagnostics.AddError(errorDeletingConnectivityWatchdog,
 			"error creating a commit to delete the connectivityWatchdog resource: "+err.Error(),
 		)
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			resp.Diagnostics.AddError(
 				errorDeletingConnectivityWatchdog,
@@ -311,7 +311,7 @@ func (r *connectivityWatchdogResource) writeConnectivityWatchdog(ctx context.Con
 		}
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		return diag.Diagnostics{
 			diag.NewErrorDiagnostic(
@@ -321,14 +321,14 @@ func (r *connectivityWatchdogResource) writeConnectivityWatchdog(ctx context.Con
 		}
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create connectivityWatchdog_resource")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create connectivityWatchdog_resource")
 	if err != nil {
 		diags := diag.Diagnostics{}
 
 		err = fmt.Errorf("error creating a commit for the connectivityWatchdog: %w", err)
 		diags.AddError(errorWritingConnectivityWatchdog, err.Error())
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			diags.AddError(
 				errorWritingConnectivityWatchdog,

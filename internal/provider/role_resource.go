@@ -33,7 +33,7 @@ func NewRoleResource() resource.Resource {
 }
 
 type roleResource struct {
-	client *client.Client
+	providerContext *ProviderContext
 }
 
 type roleResourceModel struct {
@@ -59,7 +59,7 @@ func (r *roleResource) Configure(_ context.Context, req resource.ConfigureReques
 		return
 	}
 
-	r.client = req.ProviderData.(*client.Client)
+	r.providerContext = req.ProviderData.(*ProviderContext)
 }
 
 // Schema defines the schema for the resource.
@@ -124,7 +124,7 @@ func (r *roleResource) Create(ctx context.Context, req resource.CreateRequest, r
 		}
 	}
 
-	role, err := r.client.CreateRole(ctx, payload)
+	role, err := r.providerContext.API.CreateRole(ctx, payload)
 	if err != nil {
 		resp.Diagnostics.AddError(errorCreatingRole,
 			"error writing the role: "+err.Error())
@@ -181,7 +181,7 @@ func (r *roleResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		}
 	}
 
-	role, err := r.client.UpdateRole(ctx, payload)
+	role, err := r.providerContext.API.UpdateRole(ctx, payload)
 	if err != nil {
 		resp.Diagnostics.AddError(errorUpdatingRole,
 			"error updating the role: "+err.Error())
@@ -218,7 +218,7 @@ func (r *roleResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 	}
 
 	// Read the real status
-	roles, err := r.client.ListRoles(ctx)
+	roles, err := r.providerContext.API.ListRoles(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError(errorReadingRole,
 			"error reading the role: "+err.Error())
@@ -271,7 +271,7 @@ func (r *roleResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 	// Delete the resource
 	tflog.Info(ctx, fmt.Sprintf("Deleting role %v with id %v", state.Name, state.Id))
 
-	err := r.client.DeleteRole(ctx, state.Id.ValueString())
+	err := r.providerContext.API.DeleteRole(ctx, state.Id.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError(errorDeletingRole,
 			"error deleting the role: "+err.Error())

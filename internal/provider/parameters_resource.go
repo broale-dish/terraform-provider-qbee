@@ -16,7 +16,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"go.qbee.io/client"
 	"go.qbee.io/client/config"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -46,7 +45,7 @@ func NewParametersResource() resource.Resource {
 }
 
 type parametersResource struct {
-	client *client.Client
+	providerContext *ProviderContext
 }
 
 // We use private state to keep a hash of the secret values we write.
@@ -101,7 +100,7 @@ func (r *parametersResource) Configure(_ context.Context, req resource.Configure
 		return
 	}
 
-	r.client = req.ProviderData.(*client.Client)
+	r.providerContext = req.ProviderData.(*ProviderContext)
 }
 
 // Schema defines the schema for the resource.
@@ -306,7 +305,7 @@ func (r *parametersResource) Read(ctx context.Context, req resource.ReadRequest,
 	configType, identifier := state.typeAndIdentifier()
 
 	// Read the real status
-	activeConfig, err := r.client.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
+	activeConfig, err := r.providerContext.API.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
 	if err != nil {
 		resp.Diagnostics.AddError(errorReadingParameters,
 			"error reading the active configuration: "+err.Error())
@@ -472,7 +471,7 @@ func (r *parametersResource) Delete(ctx context.Context, req resource.DeleteRequ
 		return
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			errorDeletingParameters,
@@ -481,13 +480,13 @@ func (r *parametersResource) Delete(ctx context.Context, req resource.DeleteRequ
 		return
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create parameters_resource")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create parameters_resource")
 	if err != nil {
 		resp.Diagnostics.AddError(errorDeletingParameters,
 			"error creating a commit to delete the parameters resource: "+err.Error(),
 		)
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			resp.Diagnostics.AddError(
 				errorDeletingParameters,
@@ -552,7 +551,7 @@ func (r *parametersResource) writeParameters(ctx context.Context, effective *par
 		secretValuesHash = computeSecretsHash(secretsToWrite)
 	} else {
 		// We should not change, so copy the existing values
-		activeConfig, err := r.client.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
+		activeConfig, err := r.providerContext.API.GetActiveConfig(ctx, configType, identifier, config.EntityConfigScopeOwn)
 		if err != nil {
 			return nil, diag.Diagnostics{
 				diag.NewErrorDiagnostic(
@@ -594,7 +593,7 @@ func (r *parametersResource) writeParameters(ctx context.Context, effective *par
 		}
 	}
 
-	change, err := r.client.CreateConfigurationChange(ctx, changeRequest)
+	change, err := r.providerContext.API.CreateConfigurationChange(ctx, changeRequest)
 	if err != nil {
 		return nil, diag.Diagnostics{
 			diag.NewErrorDiagnostic(
@@ -604,14 +603,14 @@ func (r *parametersResource) writeParameters(ctx context.Context, effective *par
 		}
 	}
 
-	_, err = r.client.CommitConfiguration(ctx, "terraform: create parameters_resource")
+	_, err = r.providerContext.API.CommitConfiguration(ctx, "terraform: create parameters_resource")
 	if err != nil {
 		diags := diag.Diagnostics{}
 
 		err = fmt.Errorf("error creating a commit for the parameters: %w", err)
 		diags.AddError(errorWritingParameters, err.Error())
 
-		err = r.client.DeleteConfigurationChange(ctx, change.SHA)
+		err = r.providerContext.API.DeleteConfigurationChange(ctx, change.SHA)
 		if err != nil {
 			diags.AddError(
 				errorWritingParameters,
